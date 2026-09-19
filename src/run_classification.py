@@ -4,16 +4,16 @@ import argparse
 from pathlib import Path
 
 from src.classification.constants import (
+    DEFAULT_CLASSIFICATION_DATA_DIR,
     DEFAULT_FEATURE_TABLE,
     DEFAULT_RESULTS_DIR,
     DEFAULT_TEST_PATH,
     DEFAULT_TRAIN_PATH,
 )
 from src.classification.correlation_experiment import run_correlation_experiment
-from src.classification.modeling import run_train_only_experiment
-from src.classification.plots import write_figures
-from src.classification.report import write_report
 from src.classification.split import create_frozen_split
+from src.classification.topic_experiment import run_topic_experiments
+from src.classification.workflow import run_training_workflow
 
 
 def run_split(args: argparse.Namespace) -> None:
@@ -29,31 +29,8 @@ def run_split(args: argparse.Namespace) -> None:
 
 
 def run_experiment(args: argparse.Namespace) -> None:
-    artifacts = run_train_only_experiment(args.train, args.results)
-    write_figures(
-        args.results,
-        artifacts.model_comparison,
-        artifacts.ablation_results,
-        artifacts.confusion,
-        artifacts.roc_curve,
-        artifacts.pr_curve,
-        artifacts.feature_importance,
-    )
-    report_path = write_report(
-        args.results,
-        train_path=args.train,
-        split_summary_path=args.results / "split_summary.csv",
-        group_report_path=args.results / "grouping_and_split_checks.txt",
-        model_comparison=artifacts.model_comparison,
-        ablation_results=artifacts.ablation_results,
-        train_diagnostics=artifacts.train_diagnostics,
-        best_model_config=artifacts.best_model_config,
-        selected_features=artifacts.selected_features,
-        excluded_features=artifacts.excluded_features,
-        high_correlations=artifacts.high_correlations,
-        feature_importance=artifacts.feature_importance,
-    )
-    print(f"Wrote classification report: {report_path}")
+    result = run_training_workflow(args.train, args.results)
+    print(f"Wrote classification report: {result.report_path}")
     print("Experiment used train.csv only. No test.csv evaluation was performed.")
 
 
@@ -69,6 +46,13 @@ def run_correlation(args: argparse.Namespace) -> None:
     print(f"Wrote correlation experiment report: {args.results / 'correlation_experiment_report.md'}")
     print(f"Selected development configuration: {artifacts.best_configuration['selected_configuration']}")
     print("Experiment used train.csv only. No test.csv evaluation was performed.")
+
+
+def run_topics(args: argparse.Namespace) -> None:
+    summary = run_topic_experiments(args.input, args.data_root, args.results)
+    print(f"Wrote topic experiment summary: {summary.summary_report_path}")
+    print(f"Wrote topic comparison table: {summary.summary_table_path}")
+    print("Each topic experiment used its own train.csv only. No topic test.csv was evaluated.")
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,6 +78,15 @@ def parse_args() -> argparse.Namespace:
     correlation.add_argument("--train", type=Path, default=DEFAULT_TRAIN_PATH)
     correlation.add_argument("--results", type=Path, default=DEFAULT_RESULTS_DIR / "correlation_experiment")
     correlation.set_defaults(func=run_correlation)
+
+    topics = subparsers.add_parser(
+        "topic-experiments",
+        help="Create per-topic datasets and run train-only classification for each topic.",
+    )
+    topics.add_argument("--input", type=Path, default=DEFAULT_FEATURE_TABLE)
+    topics.add_argument("--data-root", type=Path, default=DEFAULT_CLASSIFICATION_DATA_DIR / "by_topic")
+    topics.add_argument("--results", type=Path, default=DEFAULT_RESULTS_DIR / "by_topic")
+    topics.set_defaults(func=run_topics)
 
     all_cmd = subparsers.add_parser("all", help="Create the split, then run train-only model selection.")
     all_cmd.add_argument("--input", type=Path, default=DEFAULT_FEATURE_TABLE)
